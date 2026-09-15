@@ -1,7 +1,7 @@
 # EViT-UNet Architecture
 
 U-shaped hybrid CNN + Transformer network for binary organ segmentation. The network takes a **grayscale image of size 1 × 224 × 224** and predicts a single-channel mask. The encoder is an 
-**EfficientFormerV2-L** backbone; the weights below are read from the pretrained checkpoints `eformer_l_450.pth` and `best_for_synapse.pth` stored in `weights_files/evit_unet` (PyTorch **2.0.1**). Each organ is trained as a 
+**EfficientFormerV2-L** backbone. Each organ is trained as a 
 separate binary model.
 
 ## Overview
@@ -14,12 +14,10 @@ stages, attention blocks (`AttnFFN` using
 
 | Item | Value |
 | --- | --- |
-| Framework | PyTorch, `timm` layers (`DropPath`, 
-`trunc_normal_`) |
+| Framework | PyTorch, `timm` layers (`DropPath`, `trunc_normal_`) |
 | Backbone | EfficientFormerV2-L (`Eff_Unet`) |
-| Input | **Grayscale image**, shape **`(B, 1, 224, 224)`**, `float32` (stem first conv is `Conv2d(1, 20, 3×3)`) |
-| Output | shape `(B, 1, 224, 224)`, **sigmoid** 
-(because `num_classes == 1`) |
+| Input | **Grayscale image**, shape **`(B, 1, 224, 224)`**, `float32` (stem first conv is `Conv2d(120, 3×3)`) |
+| Output | shape `(B, 1, 224, 224)`, **sigmoid** (because `num_classes == 1`) |
 | Encoder stage dims | `embed_dims = [40, 80, 192, 384]` |
 | Encoder stage depths | `layers = [5, 5, 15, 10]` |
 | Attention blocks | `vit_num = 6` (last blocks of the deeper stage sare attention) |
@@ -33,38 +31,25 @@ stages, attention blocks (`AttnFFN` using
 | Head | `Conv2d(40, 1, 1×1, bias=False)` + `Sigmoid` |
 | Layer scale | `layer_scale_init_value = 1e-5` (`layer_scale_1/2` params) |
 | Regularization | `drop_path_rate = 0.1` (stochastic depth) |
-| Optimizer (pretrain ckpt) | AdamW, `lr=1e-5`→base 
-`3e-3`, `β1=0.9`, `β2=0.999`, `eps=1e-8`, cosine schedule |
+| Optimizer (pretrain ckpt) | AdamW, `lr=1e-5`→base `3e-3`, `β1=0.9`, `β2=0.999`, `eps=1e-8`, cosine schedule |
 
-> **Note on channels:** the pretrained ImageNet dump 
-shows `patch_embed.0.weight = (20, 3, 3, 3)` (3-channel 
-input). In `Eff_Unet` the stem is rebuilt as `stem(1, 
-embed_dims[0])`, i.e. **1 input channel** for 
-segmentation, so that first conv weight is *not* loaded 
-from the pretrained file (shape mismatch → dropped).
 
 ## Block diagram
 
 ```mermaid
 flowchart TB
-I["Grayscale image 1×224×224"] --> S["stem2× Conv-BN-ReLU s2
-40 ch, 56×56"]
-S --> E0["Stage 0: 5× FFN
-40 ch, 56×56"]
+I["Grayscale image 1×224×224"] --> S["stem2× Conv-BN-ReLU s240 ch, 56×56"]
+S --> E0["Stage 0: 5× FFN40 ch, 56×56"]
 E0 --> D01["Embedding 40→80"]
-D01 --> E1["Stage 1: 5× FFN
-80 ch, 28×28"]
+D01 --> E1["Stage 1: 5× FFN80 ch, 28×28"]
 E1 --> D12["Embedding 80→192"]
 D12 --> E2["Stage 2: 15 blocks
-FFN + last 6 AttnFFN
-192 ch, 14×14"]
+FFN + last 6 AttnFFN192 ch, 14×14"]
 E2 --> D23["Embedding 192→384(asub attn)"]
 D23 --> E3["Stage 3: 10 blocks
-FFN + last 6 AttnFFN
-384 ch, 7×7"]
+FFN + last 6 AttnFFN384 ch, 7×7"]
 E3 --> U3["Dec stage 384"]
-U3 --> X2["Expanding 384→192
-(Attention4DUpsample)"]
+U3 --> X2["Expanding 384→192(Attention4DUpsample)"]
 X2 --> C2["Concat skip Stage 2 + 3×3 conv → 192"]
 E2 --> C2
 C2 --> U2["Dec stage 192"]
@@ -76,11 +61,8 @@ U1 --> X0["Expanding 80→40"]
 X0 --> C0["Concat skip Stage 0 + 3×3 conv → 40"]
 E0 --> C0
 C0 --> U0["Dec stage 40"]
-U0 --> M["merge (×4 up)
-2× ConvT-BN-ReLU
-40 ch, 224×224"]
-M --> O["1×1 Conv + sigmoid
-1×224×224"]
+U0 --> M["merge (×4 up)2× ConvT-BN-ReLU40 ch, 224×224"]
+M --> O["1×1 Conv + sigmoid 1×224×224"]
 ```
 
 ## Stage map (encoder)
