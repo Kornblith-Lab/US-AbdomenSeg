@@ -1,192 +1,236 @@
-# View-Classifier (ResNet50) Architecture
+# EViT-UNet Architecture
 
-`ResNet50`-backbone image classifier for 6-way 
-ultrasound view classification. The network takes a 
-**color image of size 224 × 224 × 3** and predicts a 
-6-class softmax vector. The graph below is taken 
-from the Keras `model_config` stored in 
-`ViewClass_082526.h5` (Keras **2.13.1**, TensorFlow backend). The 
-backbone is standard ImageNet ResNet50 with a small 
-custom classification head.
-
-
-
-> Note: The class label ↔ index mapping (which of the 6 
-outputs corresponds to which view/organ) is **not 
-stored in the weights file** and is left blank.
+U-shaped hybrid CNN + Transformer network for binary organ segmentation. The network takes a **grayscale image of size 1 × 224 × 224** and predicts a single-channel mask. The encoder is an 
+**EfficientFormerV2-L** backbone; the weights below are read from the pretrained checkpoints `eformer_l_450.pth` and `best_for_synapse.pth` stored in `weights_files/evit_unet` (PyTorch **2.0.1**). Each organ is trained as a 
+separate binary model.
 
 ## Overview
 
-This is a transfer-learning **ResNet50 classifier**. This classifer takes in one 
-color image and outputs a 6-way probability vector.
-Preprocessing (BGR flip + mean subtraction) is baked 
-into the graph as `keras.applications.resnet50`-style 
-`caffe` preprocessing. The ResNet50 backbone is largely 
-frozen; only the later blocks are trainable (see 
-below). The head consists of a single hidden layer followed by a softmax classifier.
+This is a **hybrid EfficientFormerV2 U-Net**. Each 
+organ is a **separate binary model**: one **grayscale image** in, one probability map out. The encoder is a 4-stage EfficientFormerV2 backbone; each stage stacks depthwise-conv MLP blocks (`FFN`) and, in the deeper 
+stages, attention blocks (`AttnFFN` using 
+`Attention4D`). Downsampling between stages uses patch `Embedding` (a strided conv, plus an 
+`Attention4DDownsample` branch in the deep stages). The decoder mirrors this with `Expanding` (transposed-conv upsampling, `Attention4DUpsample` in shallow stages), concatenation skips, and a sigmoid head.
 
 | Item | Value |
 | --- | --- |
-| Framework | Keras Functional API (`name="model_2"`) 
-|
-| Input | `input_6`, shape **`(224, 224, 3)`**, 
-`float32` (height × width × RGB channels) |
-| Preprocessing | `tf.__operators__.getitem` (reverse 
-channels → BGR) then `tf.nn.bias_add` with `[-103.939, 
--116.779, -123.680]` (caffe-style mean subtraction) |
-| Backbone | `resnet50` (Functional submodel), output 
-`avg_pool` = `GlobalAveragePooling2D`, `(2048,)` |
-| Head | `dense_4` (128, ReLU) → `dropout_2` (rate 0.3) 
-→ `dense_5` (6, softmax) |
-| Output | `dense_5`, shape `(6,)`, softmax |
-| Convolution | ResNet50 standard (`7×7` stem, 
-`1×1`/`3×3`/`1×1` bottlenecks), bias on, 
-**GlorotUniform** |
-| Normalization | BatchNorm, `axis=channels`, momentum 
-`0.99`, ε `1.001e-05` |
-| Downsample | `7×7` stride-2 stem conv + `3×3` 
-stride-2 maxpool, then stride-2 `1×1` at each stage 
-transition |
-| Pooling head | `GlobalAveragePooling2D` (`avg_pool`) 
-|
-| Parameters | ResNet50 backbone (~23.6 M) + head 
-`2048×128 + 128` and `128×6 + 6` (~262 K) |
-| Trainable scope | `conv4_block6` onward + `conv5_*` + 
-dense head trainable; earlier layers `trainable=false` 
-|
-| Loss | (not stored — left blank) |
-| Metrics | (not stored — left blank) |
-| Optimizer (compiled) | Adam (from 
-`optimizer_weights`; hyperparameters not fully stored — 
-left blank) |
+| Framework | PyTorch, `timm` layers (`DropPath`, 
+`trunc_normal_`) |
+| Backbone | EfficientFormerV2-L (`Eff_Unet`) |
+| Input | **Grayscale image**, shape **`(B, 1, 224, 224)`**, `float32` (stem first conv is `Conv2d(1, 20, 3×3)`) |
+| Output | shape `(B, 1, 224, 224)`, **sigmoid** 
+(because `num_classes == 1`) |
+| Encoder stage dims | `embed_dims = [40, 80, 192, 384]` |
+| Encoder stage depths | `layers = [5, 5, 15, 10]` |
+| Attention blocks | `vit_num = 6` (last blocks of the deeper stage sare attention) |
+| Expansion (MLP) ratios | per-block from `expansion_ratios_L` (mix of 3 and 4) |
+| Convolution | `3×3` with `same`-style padding; `1×1` projections in MLP/attention |
+| Normalization | BatchNorm2d throughout encoder/decoder |
+| Activation | GELU in MLPs; ReLU in attention/proj and stem/merge |
+| Downsample | `stem` (÷4) then patch `Embedding` `3×3` stride-2 convs |
+| Upsample | `merge` (×4) and `Expanding` transposed-conv `3×3` stride-2 |
+| Skip connections | concat + `3×3` conv to halve channels (`CCA` gate built but bypassed for binary) |
+| Head | `Conv2d(40, 1, 1×1, bias=False)` + `Sigmoid` |
+| Layer scale | `layer_scale_init_value = 1e-5` (`layer_scale_1/2` params) |
+| Regularization | `drop_path_rate = 0.1` (stochastic depth) |
+| Optimizer (pretrain ckpt) | AdamW, `lr=1e-5`→base 
+`3e-3`, `β1=0.9`, `β2=0.999`, `eps=1e-8`, cosine schedule |
+
+> **Note on channels:** the pretrained ImageNet dump 
+shows `patch_embed.0.weight = (20, 3, 3, 3)` (3-channel 
+input). In `Eff_Unet` the stem is rebuilt as `stem(1, 
+embed_dims[0])`, i.e. **1 input channel** for 
+segmentation, so that first conv weight is *not* loaded 
+from the pretrained file (shape mismatch → dropped).
 
 ## Block diagram
 
 ```mermaid
 flowchart TB
-I["Color image 224×224×3"] --> PP["Preprocess
-reverse channels (BGR)
-+ mean subtract [-103.939, -116.779, -123.680]"]
-PP --> STEM["conv1
-7×7 s2, BN, ReLU
-+ 3×3 s2 maxpool"]
-STEM --> C2["conv2_x
-3 bottleneck blocks
-256-wide"]
-C2 --> C3["conv3_x
-4 bottleneck blocks
-512-wide"]
-C3 --> C4["conv4_x
-6 bottleneck blocks
-1024-wide"]
-C4 --> C5["conv5_x
-3 bottleneck blocks
-2048-wide"]
-C5 --> GAP["avg_pool
-GlobalAveragePooling2D → 2048"]
-GAP --> D4["dense_4
-128, ReLU"]
-D4 --> DO["dropout_2
-rate 0.3"]
-DO --> D5["dense_5
-6, softmax"]
-D5 --> O["view probabilities (6)"]
+I["Grayscale image 1×224×224"] --> S["stem2× Conv-BN-ReLU s2
+40 ch, 56×56"]
+S --> E0["Stage 0: 5× FFN
+40 ch, 56×56"]
+E0 --> D01["Embedding 40→80"]
+D01 --> E1["Stage 1: 5× FFN
+80 ch, 28×28"]
+E1 --> D12["Embedding 80→192"]
+D12 --> E2["Stage 2: 15 blocks
+FFN + last 6 AttnFFN
+192 ch, 14×14"]
+E2 --> D23["Embedding 192→384(asub attn)"]
+D23 --> E3["Stage 3: 10 blocks
+FFN + last 6 AttnFFN
+384 ch, 7×7"]
+E3 --> U3["Dec stage 384"]
+U3 --> X2["Expanding 384→192
+(Attention4DUpsample)"]
+X2 --> C2["Concat skip Stage 2 + 3×3 conv → 192"]
+E2 --> C2
+C2 --> U2["Dec stage 192"]
+U2 --> X1["Expanding 192→80(Attention4DUpsample)"]
+X1 --> C1["Concat skip Stage 1 + 3×3 conv → 80"]
+E1 --> C1
+C1 --> U1["Dec stage 80"]
+U1 --> X0["Expanding 80→40"]
+X0 --> C0["Concat skip Stage 0 + 3×3 conv → 40"]
+E0 --> C0
+C0 --> U0["Dec stage 40"]
+U0 --> M["merge (×4 up)
+2× ConvT-BN-ReLU
+40 ch, 224×224"]
+M --> O["1×1 Conv + sigmoid
+1×224×224"]
 ```
 
-## Stage map
+## Stage map (encoder)
 
-Standard ResNet50 backbone (v1, `conv`-style residual 
-with BN on the shortcut projection). Spatial size 
-assumes `224×224` input.
+`resolution = 224`; stage `i` runs at `ceil(224 / 
+2^(i+2))`. The stem downsamples by 4 (two stride-2 
+convs), so stage 0 runs at `56×56`. BatchNorm taps at 
+`out_indices = [0, 2, 4, 6]` provide the skip tensors.
 
-| Stage | Operation | Spatial | Channels | Trainable |
+| Stage | Module | Blocks | Channels | Spatial | Skip |
+| --- | --- | ---: | ---: | ---: | --- |
+| Stem | `stem(1, 40)` | 2 conv | 1→40 | 56 | — |
+| Stage 0 (`network.0`) | `eformer_block` | 5 × FFN | 40 | 56 | → decoder |
+| Embed 0→1 (`network.1`) | `Embedding` | — | 40→80 | 28 | |
+| Stage 1 (`network.2`) | `eformer_block` | 5 × FFN | 80 | 28 | → decoder |
+| Embed 1→2 (`network.3`) | `Embedding` | — | 80→192 | 14 | |
+| Stage 2 (`network.4`) | `eformer_block` | 15 (9 FFN + last 6 `AttnFFN`) | 192 | 14 | → decoder |
+| Embed 2→3 (`network.5`) | `Embedding` (asub) | — | 192→384 | 7 | conv branch + `Attention4DDownsample` |
+| Stage 3 (`network.6`) | `eformer_block` | 10 (4 FFN + last 6 `AttnFFN`) | 384 | 7 | bottleneck |
+
+Attention placement follows `eformer_block`: within a 
+stage, when `index >= 2` and the block is among the 
+last `vit_num = 6` blocks, an `AttnFFN` (with 
+`Attention4D`) is used instead of an `FFN`. Stage 2 
+additionally uses `stride = 2` inside its attention 
+(down-then-upsample within the token mixer); stage 3 
+has no `stride_conv`.
+
+## Decoder
+
+The decoder (`network_up_layers`) mirrors the encoder 
+over reversed dims `[384, 192, 80, 40]` with reversed 
+depths and `expansion_ratios_L_reverse`. `skip_conn = 
+[0, 2, 4, 6]` selects the skip-fusion entries; the 
+remaining entries are `Expanding` upsamplers.
+
+| Decoder step | Module | Channels | Spatial | Skip |
 | --- | --- | ---: | ---: | --- |
-| Input | Color image (RGB) | 224 | 3 | — |
-| Preprocess | BGR flip + mean subtract | 224 | 3 | — 
-|
-| conv1 | `7×7` conv s2, BN, ReLU, `3×3` maxpool s2 | 
-56 | 64 | false |
-| conv2_x | 3 × bottleneck (`1×1`→`3×3`→`1×1`) | 56 | 
-256 | false |
-| conv3_x | 4 × bottleneck (first block s2) | 28 | 512 
-| false |
-| conv4_x | 6 × bottleneck (first block s2) | 14 | 1024 
-| partial (block6 trainable) |
-| conv5_x | 3 × bottleneck (first block s2) | 7 | 2048 
-| true |
-| avg_pool | GlobalAveragePooling2D | 1 | 2048 | true 
-|
-| dense_4 | Dense, ReLU | — | 128 | true |
-| dropout_2 | Dropout (rate 0.3) | — | 128 | true |
-| dense_5 | Dense, softmax | — | 6 | true |
+| Dec stage (bottleneck) | `eformer_block_up` | 384 | 7 | — |
+| Expanding | `Expanding` (asub, `Attention4DUpsample`) | 384→192 | 14 | |
+| Skip + Dec stage | concat / `3×3` conv / `eformer_block_up` | 192 | 14 | encoder stage 2 |
+| Expanding | `Expanding` (asub, `Attention4DUpsample`) | 192→80 | 28 | |
+| Skip + Dec stage | concat / `3×3` conv / `eformer_block_up` | 80 | 28 | encoder stage 1 |
+| Expanding | `Expanding` | 80→40 | 56 | |
+| Skip + Dec stage | concat / `3×3` conv / `eformer_block_up` | 40 | 56 | encoder stage 0 |
+| merge | `merge` (2× ConvT stride-2) | 40 | 224 | ×4 upsample |
+| Head | `Conv2d(40, 1, 1×1)`, sigmoid | 1 | 224 | — |
 
-### ResNet50 bottleneck block
+Skip fusion (`forward_up_features`) differs by task:
+- **Binary (`num_classes == 1`, this model):** plain 
+concat of the decoder feature with the matching encoder 
+tap, then `concat_back_dim` `3×3` conv. The `CCA` 
+modules are built but bypassed.
+- **Multi-class:** `CCA` channel attention is applied 
+to the skip before concat.
 
-Each block (`convN_blockM`):
+## Building blocks
 
-1. `1×1` Conv → BN → ReLU (`_1_conv`, `_1_bn`, 
-`_1_relu`)
-2. `3×3` Conv (`same`) → BN → ReLU (`_2_conv`, `_2_bn`, 
-`_2_relu`)
-3. `1×1` Conv → BN (`_3_conv`, `_3_bn`)
-4. Shortcut: identity, or `1×1` Conv → BN projection 
-(`_0_conv`, `_0_bn`) on the first block of a stage
-5. `Add` shortcut + main branch → ReLU (`_add`, 
-`_out`)
+- **`Mlp` (mid-conv MLP):** `Conv1×1 → BN → GELU → 
+[depthwise Conv3×3 → BN → GELU] → Conv1×1 → BN`. 
+Corresponds to the `mlp.fc1 / mid / fc2` tensors in the 
+weight dump. `hidden = dim × mlp_ratio` (3 or 4).
+- **`FFN`:** residual `x + layer_scale_2 · mlp(x)`. 
+Only `layer_scale_2` exists (no token mixer).
+- **`AttnFFN`:** residual `x + layer_scale_1 · 
+token_mixer(x)`, then `x + layer_scale_2 · mlp(x)`. Has 
+both `layer_scale_1` and `layer_scale_2`.
+- **`Attention4D`:** multi-head attention (`num_heads = 
+8`, `key_dim = 32`). `q/k` project to 
+`key_dim·num_heads = 256`, `v` to 
+`attn_ratio·key_dim·num_heads = 1024`, plus a depthwise 
+`v_local`, two `talking_head` 1×1 convs, relative 
+`attention_biases`, and a ReLU + `proj`. Optional 
+`stride_conv` + bilinear `upsample` for 
+downsample-inside-attention.
+- **`Attention4DDownsample` / `LGQuery`:** `num_heads = 
+8`, `key_dim = 16` (`q/k` → 128, `v` → 512). Query is 
+`AvgPool + depthwise stride-2 conv` (halves 
+resolution); used inside deep `Embedding` layers 
+(`asub=True`). Has relative `attention_biases`.
+- **`Attention4DUpsample` / `UpLGQuery`:** query uses 
+bilinear upsample + transposed conv (doubles 
+resolution); used inside shallow `Expanding` layers 
+(`asub=True`). No `attention_biases`.
+- **`Embedding`:** patch merge. `asub` = strided-conv 
+branch + `Attention4DDownsample` branch summed; else 
+plain strided conv + BN.
+- **`Expanding`:** patch expand (transposed conv), 
+mirror of `Embedding`, with `Attention4DUpsample` 
+branch when `asub`.
+- **`CCA`:** channel-wise cross attention — 
+global-avg-pool both `g` and `x`, MLP each, average, 
+sigmoid gate, scale `x`, ReLU. Used for multi-class 
+skips only.
 
-The first block of `conv3_x`, `conv4_x`, and `conv5_x` 
-uses a stride-2 `1×1` on both the main `_1_conv` and 
-the `_0_conv` projection to downsample.
+## Loss
+Training uses a combined **BCE + Dice** objective 
+(binary, `num_classes = 1`):
 
-## Preprocessing detail
+- Training loss is a weighted sum: `0.4 · BCE + 0.6 · Dice`.
+- `BCE`: binary cross-entropy (`nn.BCELoss`) between the sigmoid output and the mask.
+- `Dice`: soft Dice loss (`utils.DiceLoss`) over the flattened prediction and mask.
 
-The graph implements Keras `resnet50.preprocess_input` 
-(`caffe` mode) inline:
 
-- `tf.__operators__.getitem` with slice `[..., ::-1]` → 
-reverses the last (channel) axis (RGB → BGR).
-- `tf.nn.bias_add` with bias `[-103.939, -116.779, 
--123.680]` (NHWC) → subtracts the ImageNet BGR channel 
-means.
+## Differences from the original U-Net
 
-Feed a raw `float32` RGB image in `[0, 255]`; do 
-**not** pre-normalize, since preprocessing is inside 
-the model.
+Relative to Ronneberger et al. (2015):
 
-## Trainable / frozen layers
-
-From the config `trainable` flags:
-
-- **Frozen (`trainable=false`)**: `conv1` through 
-`conv4_block5`, plus most BatchNorm layers throughout 
-(BN kept in inference mode; `resnet50` is called with 
-`training=false`).
-- **Trainable (`trainable=true`)**: 
-`conv4_block6_2_conv` / `conv4_block6_3_conv` and their 
-surrounding ops, all of `conv5_*` conv layers, and the 
-`dense_4` / `dense_5` head. This matches the 
-`optimizer_weights`, which only contain Adam `m`/`v` 
-slots for `conv4_block6_2/3`, all `conv5_*` convs, and 
-`dense_4`/`dense_5` — i.e. only the fine-tuned layers.
-
-## Head and output
-
-- `dense_4`: `Dense(128, activation=relu)`, kernel 
-`(2048, 128)`, GlorotUniform.
-- `dropout_2`: `Dropout(rate=0.3)`.
-- `dense_5`: `Dense(6, activation=softmax)`, kernel 
-`(128, 6)`, GlorotUniform.
-- Output is a length-6 probability vector; take 
-`argmax` for the predicted view class.
+- **Hybrid backbone**: EfficientFormerV2 
+transformer/CNN stages instead of pure double-conv CNN; 
+deep stages use **`Attention4D` self-attention** for 
+global context.
+- **Grayscale** `(1, 224, 224)` input, not color `(256, 
+256, 3)`.
+- Stage widths **40 → 80 → 192 → 384**, depths **[5, 5, 15, 10]**, instead of 16→32→64→128→256 with depth-2 
+blocks.
+- The stem does **×4 downsampling in one shot**; 
+`Embedding` / `Expanding` (some with attention 
+branches) replace `MaxPool` / plain `ConvTranspose`.
+- Skips use a learned **concat-reduction `3×3` conv** 
+(with an optional CCA gate for multi-class), not a bare 
+concatenate.
+- **BatchNorm + GELU/ReLU** with **LayerScale** and 
+**DropPath** on residual branches.
+- Encoder (and mirrored decoder) is **warm-started from 
+ImageNet pretraining**.
+- Final activation is **sigmoid** for one-vs-rest organ 
+masks, not softmax over multiple classes.
 
 ## Inference notes
 
-- Feed a **color image** as a `float32` tensor of shape 
-**`(224, 224, 3)`** (RGB, last-channel format, values 
-in `[0, 255]`). Preprocessing is internal.
-- Output shape is `(6,)` after softmax; use `argmax` 
-for the predicted class.
-- The class-index → view-name mapping is **not** 
-contained in the weights (left blank).
-- Checkpoint is a full Keras save (graph + weights + 
-Adam optimizer state for the fine-tuned layers).
+- The bundled `.pth` files (`eformer_l_450.pth`, 
+`best_for_synapse.pth`) are EfficientFormerV2-L 
+**classification** checkpoints (26.56 M params). They are the **pretrain source** for the 
+encoder, not trained segmentation weights.
+- On load, encoder keys `network.<i>.*` map to 
+`network_down_layers.<i>.*` and are also mirrored to 
+`network_up_layers.<6 - i>.*` to warm-start the 
+decoder; shape-mismatched tensors (the `3→1` stem conv, 
+the `head`/`dist_head` classifiers, the final `norm`) 
+are dropped (`strict=False`).
+- Feed a `float32` tensor shaped **`(B, 1, 224, 224)`** 
+(single channel). The 3-channel ImageNet stem is not 
+reused.
+- Output is sigmoid-activated in eval mode 
+(`num_classes == 1`); threshold (commonly `0.5`) to 
+obtain a binary mask.
+- Run **one checkpoint per organ**; not a single 
+multi-class network.
+- Constructor args: `layers=[5,5,15,10]`, 
+`embed_dims=[40,80,192,384]`, 
+`downsamples=[True,True,True,True]`, `vit_num=6`, 
+`drop_path_rate=0.1`, `num_classes=1`.,
