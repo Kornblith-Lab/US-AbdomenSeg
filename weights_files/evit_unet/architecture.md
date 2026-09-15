@@ -7,7 +7,7 @@ separate binary model.
 ## Overview
 
 This is a **hybrid EfficientFormerV2 U-Net**. Each 
-organ is a **separate binary model**: one **grayscale image** in, one probability map out. The encoder is a 4-stage EfficientFormerV2 backbone; each stage stacks depthwise-conv MLP blocks (`FFN`) and, in the deeper 
+organ is a **separate binary model**: one grayscale image in, one probability map out. The encoder is a 4-stage EfficientFormerV2 backbone; each stage stacks depthwise-conv MLP blocks (`FFN`) and, in the deeper 
 stages, attention blocks (`AttnFFN` using 
 `Attention4D`). Downsampling between stages uses patch `Embedding` (a strided conv, plus an 
 `Attention4DDownsample` branch in the deep stages). The decoder mirrors this with `Expanding` (transposed-conv upsampling, `Attention4DUpsample` in shallow stages), concatenation skips, and a sigmoid head.
@@ -16,7 +16,7 @@ stages, attention blocks (`AttnFFN` using
 | --- | --- |
 | Framework | PyTorch, `timm` layers (`DropPath`, `trunc_normal_`) |
 | Backbone | EfficientFormerV2-L (`Eff_Unet`) |
-| Input | **Grayscale image**, shape **`(B, 1, 224, 224)`**, `float32` (stem first conv is `Conv2d(120, 3×3)`) |
+| Input | Grayscale image, shape **`(B, 1, 224, 224)`**, `float32` (stem first conv is `Conv2d(120, 3×3)`) |
 | Output | shape `(B, 1, 224, 224)`, **sigmoid** (because `num_classes == 1`) |
 | Encoder stage dims | `embed_dims = [40, 80, 192, 384]` |
 | Encoder stage depths | `layers = [5, 5, 15, 10]` |
@@ -171,15 +171,15 @@ Training uses a combined **BCE + Dice** objective
 
 Relative to Ronneberger et al. (2015):
 
-- **Hybrid backbone**: EfficientFormerV2 
+- Hybrid backbone: EfficientFormerV2 
 transformer/CNN stages instead of pure double-conv CNN; 
 deep stages use **`Attention4D` self-attention** for 
 global context.
-- **Grayscale** `(1, 224, 224)` input, not color `(256, 
+- Grayscale `(1, 224, 224)` input, not color `(256, 
 256, 3)`.
 - Stage widths **40 → 80 → 192 → 384**, depths **[5, 5, 15, 10]**, instead of 16→32→64→128→256 with depth-2 
 blocks.
-- The stem does **×4 downsampling in one shot**; 
+- The stem does ×4 downsampling in one shot; 
 `Embedding` / `Expanding` (some with attention 
 branches) replace `MaxPool` / plain `ConvTranspose`.
 - Skips use a learned **concat-reduction `3×3` conv** 
@@ -189,7 +189,7 @@ concatenate.
 **DropPath** on residual branches.
 - Encoder (and mirrored decoder) is **warm-started from 
 ImageNet pretraining**.
-- Final activation is **sigmoid** for one-vs-rest organ 
+- Final activation is sigmoid for one-vs-rest organ 
 masks, not softmax over multiple classes.
 
 ## Inference notes
