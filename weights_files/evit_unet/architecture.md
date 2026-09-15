@@ -194,10 +194,6 @@ masks, not softmax over multiple classes.
 
 ## Inference notes
 
-- The bundled `.pth` files (`eformer_l_450.pth`, 
-`best_for_synapse.pth`) are EfficientFormerV2-L 
-**classification** checkpoints (26.56 M params). They are the **pretrain source** for the 
-encoder, not trained segmentation weights.
 - On load, encoder keys `network.<i>.*` map to 
 `network_down_layers.<i>.*` and are also mirrored to 
 `network_up_layers.<6 - i>.*` to warm-start the 
