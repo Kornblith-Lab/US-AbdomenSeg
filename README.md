@@ -46,11 +46,11 @@ US-AbdomenSeg/
 │   │   ├── architecture.md      # Model architecture details
 │   │   ├── bladder.pth
 │   │   ├── kidney.pth
-│   │   └── ...                  # One weights file per organ
+│   │   └── ...                  # One weights file per anatomical structure
 │   └── unet/
 │       ├── architecture.md
 │       ├── bladder.h5
-│       └── ...                  # One weights file per organ
+│       └── ...                  # One weights file per anatomical structure
 └── README.md
 ```
 
