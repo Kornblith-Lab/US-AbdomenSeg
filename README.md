@@ -1,7 +1,5 @@
 # US-AbdomenSeg
 
-Currently has a brief description of the rest of the contents inside the folder, anything else you would expect to see if youre coming to the older for first time, don’t have as much detail, as much as you think is necessary
-
 Research Repository for multi-organ segmentation in abdominal ultrasound using deep learning models 
 
 > *Objective*: To describe the development and implementation of machine learning models to automatically localize and segment six abdominal organs in pediatric FAST.
