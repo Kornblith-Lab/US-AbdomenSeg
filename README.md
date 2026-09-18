@@ -52,8 +52,7 @@ US-AbdomenSeg/
 └── README.md
 ```
 
-
-## How to Use
+## Getting Started
 
 1. Clone the repository
 ```bash
@@ -69,9 +68,8 @@ pip install -r requirements.txt
 The model weights can be downloaded from the weights_files folder. Weights are organized by model type (e.g., UNet, EViT-UNet) and separated by anatomical structure.
 
 
-4. Run Inference
-
-5. Train
-
-6. Test
-
+## Inference
+For running inference, see the model-specific 
+instructions:
+- [EViT-UNet](./weights_files/evit-unet/README.md)
+- [UNet](./weights_files/unet/README.md)
