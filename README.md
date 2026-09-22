@@ -64,12 +64,12 @@ cd US-AbdomenSeg
 pip install -r requirements.txt
 ```
 
-3. Download Weights
+3. Download Weights<br>
 The model weights can be downloaded from the weights_files folder. Weights are organized by model type (e.g., UNet, EViT-UNet) and separated by anatomical structure.
 
 
 ## Inference
-For running inference, see the model-specific 
+For tips on running inference, see the model-specific 
 instructions:
 - [EViT-UNet](./weights_files/evit-unet/README.md)
 - [UNet](./weights_files/unet/README.md)
