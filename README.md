@@ -71,5 +71,5 @@ The model weights can be downloaded from the weights_files folder. Weights are o
 ## Inference
 For tips on running inference, see the model-specific 
 instructions:
-- [EViT-UNet](./weights_files/evit-unet/README.md)
-- [UNet](./weights_files/unet/README.md)
+- [EViT unet](weights_files/evit_unet/README.md)
+- [unet]
