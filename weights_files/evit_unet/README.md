@@ -58,7 +58,7 @@ net = Eff_Unet(
     num_classes=1).cuda()
 ```
 
-Note: Drop .cuda() on CPU-only machines
+**Note:** Drop .cuda() on CPU-only machines
 
 ### 3. Download model weights
 
