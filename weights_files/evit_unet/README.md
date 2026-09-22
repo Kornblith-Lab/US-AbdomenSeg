@@ -25,6 +25,25 @@ Then activate the environment:
 
 ### 2. Structure the model
 
+## 2. Structure the model
+All organ checkpoints use the SAME config. 
+num_classes=1 (binary) and
+NO fork_feat — the model returns one sigmoid map, not a 
+feature list.
+
+    from unet import Eff_Unet
+
+    net = Eff_Unet(
+        layers=[5, 5, 15, 10],
+        embed_dims=[40, 80, 192, 384],
+        downsamples=[True, True, True, True],
+        vit_num=6,
+        drop_path_rate=0.1,
+        num_classes=1,
+    ).cuda()          # drop .cuda() on CPU-only machines
+    net.eval()
+
+
 All organ checkpoints use the same config:
 
 ```python
@@ -36,9 +55,10 @@ net = Eff_Unet(
     downsamples=[True, True, True, True],
     vit_num=6,
     drop_path_rate=0.1,
-    num_classes=1,
-    fork_feat=True).cuda()
+    num_classes=1).cuda()
 ```
+
+Note: Drop .cuda() on CPU-only machines
 
 ### 3. Download model weights
 
@@ -55,6 +75,7 @@ organ(s) from the `evit_unet` folder. The following checkpoints are available:
 ### 4. Load weights
 
 ```python
+import torch
 net.load_state_dict(torch.load("organ.pth"), strict=True)
 net.eval()
 ```
@@ -76,10 +97,4 @@ mask = out.cpu().detach().numpy().squeeze() > 0.5              # bool [224, 224]
 mask_full = zoom(mask.astype(np.float32), (x / 224, y / 224), order=0) > 0.5
 ```
 
-To run it: save the above as `single_infer.py` in the 
-repo root, edit `"organ.pth"` and `"frame.png"`, then 
-`python single_infer.py`.
-
-
-
-
+To run, edit `"organ.pth"` and `"frame.png"`.
