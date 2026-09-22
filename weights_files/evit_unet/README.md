@@ -23,7 +23,7 @@ Then activate the environment:
 `conda activate <env_name>`
 
 
-## 2. Structure the model
+### 2. Structure the model
 
 All organ checkpoints use the same config:
 
@@ -52,7 +52,7 @@ organ(s) from the `evit_unet` folder. The following checkpoints are available:
 - spine.pth
 - spleen.pth
 
-## 4. Load weights
+### 4. Load weights
 
 ```python
 net.load_state_dict(torch.load("organ.pth"), strict=True)
@@ -60,7 +60,7 @@ net.eval()
 ```
 Replace `"organ.pth"` with your organ checkpoint.
 
-## 4. Format an image and produce a prediction
+### 5. Format an image and produce a prediction
 
 The model expects a single-channel 224×224 float tensor `[1, 1, 224, 224]`.
 
@@ -75,11 +75,6 @@ with torch.no_grad():
 mask = out.cpu().detach().numpy().squeeze() > 0.5              # bool [224, 224]
 mask_full = zoom(mask.astype(np.float32), (x / 224, y / 224), order=0) > 0.5
 ```
-
-The resize/tensor/threshold steps are taken 
-directly from `utils.py` and `png_to_npz.py`. The 
-`order=3` for images / `order=0` for masks convention 
-is from `utils.py`.
 
 To run it: save the above as `single_infer.py` in the 
 repo root, edit `"organ.pth"` and `"frame.png"`, then 
