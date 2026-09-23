@@ -36,7 +36,7 @@ Repository includes separate Organ Model Weights for U-Net and Evit-U-Net
 
 ```
 US-AbdomenSeg/
-├── assets/                      # Figures and images used in the README
+├── assets/                      
 ├── weights_files/               # Downloadable model weights, organized by model
 │   ├── evit-unet/
 │   │   ├── architecture.md      # Model architecture details
