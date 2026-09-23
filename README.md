@@ -6,8 +6,6 @@ Research Repository for multi-organ segmentation in abdominal ultrasound using d
 > 
 >Methods: We developed or fine-tuned models based on the U-Net, EVIT U-Net, UltraSAM and nnUnet architectures to automate the segmentation of six key organs in FAST: kidney, bladder, liver, diaphragm, spleen, and spine. Accuracy of the automated segmentation was assessed by measuring the Dice-Sørensen similarity (DSC) against manual annotations. Pediatric ultrasound experts also evaluated the acceptability of organ segments placed on RUQ, LUQ and Pelvic views in previously unlabeled pediatric and adult images in our image review platform.
 
-<img alt="Study Methods"  src="assets/Study_Flow.png"/>
-
 Repository includes separate Organ Model Weights for U-Net and Evit-U-Net
 
 <img alt="Original Label against Prediction"  src="assets/Images_Annotated.jpg"/>
