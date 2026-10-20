@@ -24,8 +24,6 @@ Then activate the environment:
 
 
 ### 2. Structure the model
-
-## 2. Structure the model
 All organ checkpoints use the SAME config. 
 num_classes=1 (binary) and
 NO fork_feat — the model returns one sigmoid map, not a 
